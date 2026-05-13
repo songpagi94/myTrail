@@ -1,7 +1,6 @@
 """텔레그램 봇 명령·메시지·콜백 핸들러."""
 
 import logging
-import os
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -13,11 +12,18 @@ logger = logging.getLogger(__name__)
 
 HELP_TEXT = (
     "사용법:\n"
-    "/setup — 자격증명 등록 (Claude API 키, 철도사 ID/PW, 카드)\n"
+    "/setup — 자격증명 등록 (철도사 ID/PW, 카드)\n"
     "/cards — 카드 목록·추가·삭제\n"
     "/cancel — 진행 중 예약 시도·예약 취소\n"
     "/help — 도움말\n\n"
-    "그 외에는 자유롭게 말하세요. 예: '내일 오후 6시 부산에서 서울 KTX'"
+    "예약 검색 형식:\n"
+    "  출발역 도착역 날짜(YYYYMMDD) 시간(HHMM) [SRT|KTX] [좌석옵션]\n\n"
+    "좌석 옵션: 일반만(기본), 일반우선, 특실만, 특실우선\n\n"
+    "예:\n"
+    "  서울 부산 20260515 1400\n"
+    "  서울 부산 20260515 1400 KTX\n"
+    "  서울 부산 20260515 1400 SRT 특실우선\n"
+    "  울산 서울 20260515 0800  ← 역명 별칭 지원"
 )
 
 WELCOME_TEXT = (
@@ -265,27 +271,15 @@ async def on_free_message(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     text = update.message.text
     today = _dt.date.today().isoformat()
-    api_key = os.environ.get("BOT_CLAUDE_KEY")
-    if not api_key:
-        await update.message.reply_text("운영자 설정 오류: BOT_CLAUDE_KEY 미설정.")
-        return
-
-    # 직전 명확화 답변이면 이전 메시지와 합쳐서 재파싱
-    pending = context.user_data.pop("pending_text", None)
-    if pending:
-        text = f"{pending} / {text}"
 
     try:
-        intent = parser.parse(text=text, today=today, api_key=api_key)
+        intent = parser.parse(text=text, today=today)
     except parser.ParseError as e:
-        await update.message.reply_text(f"이해 못 했어요. 다시 말해주세요.\n({e})")
-        return
-
-    if intent.get("needs_clarification"):
-        # 다음 메시지 때 합치도록 현 텍스트 보관 (일회성)
-        context.user_data["pending_text"] = text
-        fields = ", ".join(intent["needs_clarification"])
-        await update.message.reply_text(f"명확하게 알려주세요: {fields}")
+        await update.message.reply_text(
+            f"형식 오류: {e}\n\n"
+            "입력 형식: 출발역 도착역 날짜(YYYYMMDD) 시간(HHMM) [SRT|KTX] [좌석옵션]\n"
+            "예: 서울 부산 20260515 1400"
+        )
         return
 
     rail_type = intent["rail"]
