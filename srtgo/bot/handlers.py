@@ -168,7 +168,17 @@ async def setup_card_label(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     storage.add_card(update.effective_user.id, pending, label)
 
     context.user_data.pop("setup", None)
-    await update.message.reply_text("등록 완료. 이제 자유롭게 말해보세요.")
+    await update.message.reply_text(
+        "등록 완료.\n\n"
+        "예약 검색 형식:\n"
+        "  출발역 도착역 날짜(YYYYMMDD) 시간(HHMM) [SRT|KTX] [좌석옵션]\n\n"
+        "좌석 옵션: 일반만(기본), 일반우선, 특실만, 특실우선\n\n"
+        "예:\n"
+        "  서울 부산 20260515 1400\n"
+        "  서울 부산 20260515 1400 KTX\n"
+        "  서울 부산 20260515 1400 SRT 특실우선\n"
+        "  울산 서울 20260515 0800  ← 역명 별칭 지원"
+    )
     return ConversationHandler.END
 
 
