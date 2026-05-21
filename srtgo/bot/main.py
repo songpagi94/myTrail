@@ -96,6 +96,7 @@ def main() -> None:
     app.add_handler(CommandHandler("cancel", handlers.cmd_cancel))
     app.add_handler(CallbackQueryHandler(handlers.on_page, pattern=r"^page:"))
     app.add_handler(CallbackQueryHandler(handlers.on_pick, pattern=r"^pick:"))
+    app.add_handler(CallbackQueryHandler(handlers.on_preset_card, pattern=r"^preset:"))
     app.add_handler(CallbackQueryHandler(handlers.on_payment_decision, pattern=r"^pay:"))
     app.add_handler(CallbackQueryHandler(
         handlers.on_cards_callback,

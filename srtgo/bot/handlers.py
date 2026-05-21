@@ -126,7 +126,7 @@ async def setup_ktx(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["setup"]["ktx"] = cred
     await update.message.reply_text(
         "3/4: 카드 정보를 한 줄에 공백 4개로:\n"
-        "  카드번호 비번앞2자리 생년월일(YYMMDD) 만료(MMYY)\n"
+        "  카드번호 비번앞2자리 생년월일(YYMMDD) 유효기간(YYMM) 혹은 사업자등록번호\n"
         "예: 1111222233334444 12 900101 1230"
     )
     return STATE_CARD
@@ -221,6 +221,15 @@ def _card_select_keyboard(cards: list[dict]) -> InlineKeyboardMarkup:
         for c in cards
     ]
     rows.append([InlineKeyboardButton("← 돌아가기", callback_data="pay:back")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _preset_card_keyboard(cards: list[dict]) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(_card_display(c), callback_data=f"preset:card:{c['id']}")]
+        for c in cards
+    ]
+    rows.append([InlineKeyboardButton("수동 결제", callback_data="preset:manual")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -418,11 +427,50 @@ async def on_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await cq.edit_message_text("이미 진행 중인 예약 시도가 있어요. /cancel 후 다시.")
         return
 
+    context.user_data["pending_indices"] = indices
+    cards = storage.list_cards(tid)
+    await cq.edit_message_text(
+        "좌석 확보 시 자동 결제할 카드를 선택하세요.",
+        reply_markup=_preset_card_keyboard(cards),
+    )
+
+
+async def on_preset_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    cq = update.callback_query
+    await cq.answer()
+    tid = update.effective_user.id
+
+    search = context.user_data.get("search")
+    indices = context.user_data.pop("pending_indices", None)
+    if not search or indices is None:
+        await cq.edit_message_text("세션 만료. 다시 요청해주세요.")
+        return
+
+    preset_card_id = None if cq.data == "preset:manual" else cq.data.removeprefix("preset:card:")
+
     cancel_event = threading.Event()
     bot = context.application.bot
     loop = asyncio.get_running_loop()
 
     def on_success(reservation):
+        if preset_card_id:
+            card = storage.get_card(tid, preset_card_id)
+            if card:
+                try:
+                    ok = svc_pay.pay_with_saved_card(search["rail"], reservation, card)
+                except Exception as e:
+                    logger.error("자동 결제 예외: %s", e)
+                    ok = False
+                if ok:
+                    asyncio.run_coroutine_threadsafe(
+                        notifier.send_text(bot, tid, f"좌석 확보 및 결제 완료!\n{reservation}"),
+                        loop,
+                    )
+                    return
+                asyncio.run_coroutine_threadsafe(
+                    notifier.send_text(bot, tid, "자동 결제 실패. 수동으로 결제해주세요."),
+                    loop,
+                )
         _SESSION.clear_pending(tid)
         _SESSION.set_pending(tid, {"reservation": reservation, "rail": search["rail"]})
         asyncio.run_coroutine_threadsafe(
@@ -450,7 +498,8 @@ async def on_pick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     task = asyncio.create_task(runner())
     _SESSION.start_poll(tid, task, cancel_event)
     context.user_data.pop("search", None)
-    await cq.edit_message_text("예약 시도 시작. 좌석 잡히면 알림 드립니다.")
+    start_msg = "예약 시도 시작. 좌석 잡히면 자동 결제합니다." if preset_card_id else "예약 시도 시작. 좌석 잡히면 알림 드립니다."
+    await cq.edit_message_text(start_msg)
 
 
 from ..service import payment as svc_pay
@@ -673,7 +722,7 @@ async def cards_add_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     await cq.edit_message_text(
         "추가할 카드 정보를 한 줄에 공백 4개로:\n"
-        "  카드번호 비번앞2자리 생년월일(YYMMDD) 만료(MMYY)\n"
+        "  카드번호 비번앞2자리 생년월일(YYMMDD) 유효기간(YYMM) 혹은 사업자등록번호\n"
         "예: 1111222233334444 12 900101 1230\n"
         "(취소: /cancel)"
     )
