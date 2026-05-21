@@ -27,14 +27,29 @@ def _build_setup_conversation() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[CommandHandler("setup", handlers.setup_entry)],
         states={
-            handlers.STATE_SRT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.setup_srt),
+            handlers.STATE_SRT_ID: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.setup_srt_id),
             ],
-            handlers.STATE_KTX: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.setup_ktx),
+            handlers.STATE_SRT_PW: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.setup_srt_pw),
             ],
-            handlers.STATE_CARD: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.setup_card),
+            handlers.STATE_KTX_ID: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.setup_ktx_id),
+            ],
+            handlers.STATE_KTX_PW: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.setup_ktx_pw),
+            ],
+            handlers.STATE_SETUP_CARD_NUMBER: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.setup_card_number),
+            ],
+            handlers.STATE_SETUP_CARD_PW: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.setup_card_pw),
+            ],
+            handlers.STATE_SETUP_CARD_BIRTHDAY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.setup_card_birthday),
+            ],
+            handlers.STATE_SETUP_CARD_EXPIRE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.setup_card_expire),
             ],
             handlers.STATE_CARD_LABEL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.setup_card_label),
@@ -50,14 +65,38 @@ def _build_cards_add_conversation() -> ConversationHandler:
             CallbackQueryHandler(handlers.cards_add_entry, pattern=r"^cards:add$"),
         ],
         states={
-            handlers.STATE_CARDS_NEW_FIELDS: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.cards_add_fields),
+            handlers.STATE_CARDS_NUMBER: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.cards_add_number),
+            ],
+            handlers.STATE_CARDS_PW: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.cards_add_pw),
+            ],
+            handlers.STATE_CARDS_BIRTHDAY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.cards_add_birthday),
+            ],
+            handlers.STATE_CARDS_EXPIRE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.cards_add_expire),
             ],
             handlers.STATE_CARDS_NEW_LABEL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.cards_add_label),
             ],
         },
         fallbacks=[CommandHandler("cancel", handlers.cards_add_cancel)],
+        per_message=False,
+    )
+
+
+def _build_cards_edit_conversation() -> ConversationHandler:
+    return ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(handlers.cards_edit_entry, pattern=r"^cards:edit_field:"),
+        ],
+        states={
+            handlers.STATE_CARDS_EDIT_VALUE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.cards_edit_value),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", handlers.cards_edit_cancel)],
         per_message=False,
     )
 
@@ -93,6 +132,7 @@ def main() -> None:
     app.add_handler(CommandHandler("cards", handlers.cmd_cards))
     app.add_handler(_build_setup_conversation())
     app.add_handler(_build_cards_add_conversation())
+    app.add_handler(_build_cards_edit_conversation())
     app.add_handler(CommandHandler("cancel", handlers.cmd_cancel))
     app.add_handler(CallbackQueryHandler(handlers.on_page, pattern=r"^page:"))
     app.add_handler(CallbackQueryHandler(handlers.on_pick, pattern=r"^pick:"))
@@ -100,7 +140,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(handlers.on_payment_decision, pattern=r"^pay:"))
     app.add_handler(CallbackQueryHandler(
         handlers.on_cards_callback,
-        pattern=r"^cards:(del|del_confirm)(?=:)|^cards:noop$",
+        pattern=r"^cards:(del|del_confirm|edit)(?=:)|^cards:noop$",
     ))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.on_free_message))
 

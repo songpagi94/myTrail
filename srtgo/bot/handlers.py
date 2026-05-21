@@ -65,8 +65,11 @@ from telegram.ext import ConversationHandler
 
 from . import storage
 
-STATE_SRT, STATE_KTX, STATE_CARD, STATE_CARD_LABEL = range(4)
-STATE_CARDS_NEW_FIELDS, STATE_CARDS_NEW_LABEL = range(10, 12)
+STATE_SRT_ID, STATE_SRT_PW, STATE_KTX_ID, STATE_KTX_PW = range(4)
+STATE_SETUP_CARD_NUMBER, STATE_SETUP_CARD_PW, STATE_SETUP_CARD_BIRTHDAY, STATE_SETUP_CARD_EXPIRE, STATE_CARD_LABEL = range(4, 9)
+
+STATE_CARDS_NUMBER, STATE_CARDS_PW, STATE_CARDS_BIRTHDAY, STATE_CARDS_EXPIRE, STATE_CARDS_NEW_LABEL = range(10, 15)
+STATE_CARDS_EDIT_VALUE = 20
 
 
 async def setup_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -86,84 +89,97 @@ async def setup_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     context.user_data["setup"] = {}
     await update.message.reply_text(
-        "자격증명 등록을 시작합니다.\n"
-        "1/4: SRT 아이디·비번을 한 줄에 공백으로 구분해 보내주세요.\n"
+        "자격증명 등록을 시작합니다.\n\n"
+        "1단계: SRT 회원번호(또는 아이디 또는 휴대폰번호)를 입력해주세요.\n"
         "사용 안 하면 'skip'. (취소: /cancel)"
     )
-    return STATE_SRT
+    return STATE_SRT_ID
 
 
-_INVALID = object()
-
-
-def _parse_id_pw(text: str):
-    text = text.strip()
+async def setup_srt_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.message.text.strip()
     if text.lower() == "skip":
-        return None
-    parts = text.split()
-    if len(parts) != 2:
-        return _INVALID
-    return {"id": parts[0], "pw": parts[1]}
+        context.user_data["setup"]["srt"] = None
+        await update.message.reply_text(
+            "2단계: KTX(코레일) 회원번호(또는 아이디 또는 휴대폰번호)를 입력해주세요.\n"
+            "사용 안 하면 'skip'."
+        )
+        return STATE_KTX_ID
+    context.user_data["setup"]["_srt_id"] = text
+    await update.message.reply_text("SRT 비밀번호를 입력해주세요.")
+    return STATE_SRT_PW
 
 
-async def setup_srt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    cred = _parse_id_pw(update.message.text)
-    if cred is _INVALID:
-        await update.message.reply_text("형식: 'id pw' 또는 'skip'")
-        return STATE_SRT
-    context.user_data["setup"]["srt"] = cred
+async def setup_srt_pw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    pw = update.message.text.strip()
+    srt_id = context.user_data["setup"].pop("_srt_id")
+    context.user_data["setup"]["srt"] = {"id": srt_id, "pw": pw}
     await update.message.reply_text(
-        "2/4: KTX(코레일) 아이디·비번. 사용 안 하면 'skip'."
+        "2단계: KTX(코레일) 회원번호(또는 아이디 또는 휴대폰번호)를 입력해주세요.\n"
+        "사용 안 하면 'skip'."
     )
-    return STATE_KTX
+    return STATE_KTX_ID
 
 
-async def setup_ktx(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    cred = _parse_id_pw(update.message.text)
-    if cred is _INVALID:
-        await update.message.reply_text("형식: 'id pw' 또는 'skip'")
-        return STATE_KTX
-    context.user_data["setup"]["ktx"] = cred
+async def setup_ktx_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.message.text.strip()
+    if text.lower() == "skip":
+        context.user_data["setup"]["ktx"] = None
+        await update.message.reply_text(
+            "3단계: 카드번호를 입력해주세요.\n예: 1111222233334444"
+        )
+        return STATE_SETUP_CARD_NUMBER
+    context.user_data["setup"]["_ktx_id"] = text
+    await update.message.reply_text("KTX 비밀번호를 입력해주세요.")
+    return STATE_KTX_PW
+
+
+async def setup_ktx_pw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    pw = update.message.text.strip()
+    ktx_id = context.user_data["setup"].pop("_ktx_id")
+    context.user_data["setup"]["ktx"] = {"id": ktx_id, "pw": pw}
     await update.message.reply_text(
-        "3/4: 카드 정보를 한 줄에 공백 4개로:\n"
-        "  카드번호 비번앞2자리 생년월일(YYMMDD) 유효기간(YYMM) 혹은 사업자등록번호\n"
-        "예: 1111222233334444 12 900101 1230"
+        "3단계: 카드번호를 입력해주세요.\n예: 1111222233334444"
     )
-    return STATE_CARD
+    return STATE_SETUP_CARD_NUMBER
 
 
-async def setup_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    parts = update.message.text.strip().split()
-    if len(parts) != 4:
-        await update.message.reply_text("형식이 잘못됐어요. 4개 항목을 공백으로.")
-        return STATE_CARD
-    number, password, birthday, expire = parts
-    context.user_data["setup"]["_pending_card"] = {
-        "number": number, "password": password,
-        "birthday": birthday, "expire": expire,
-    }
-    await update.message.reply_text(
-        "4/4: 카드 별칭? (예: '신한', 없으면 'skip')"
-    )
+async def setup_card_number(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["setup"]["_card"] = {"number": update.message.text.strip().replace(" ", "")}
+    await update.message.reply_text("카드 비밀번호 앞 2자리를 입력해주세요.\n예: 12")
+    return STATE_SETUP_CARD_PW
+
+
+async def setup_card_pw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["setup"]["_card"]["password"] = update.message.text.strip()
+    await update.message.reply_text("생년월일(6자리) 또는 사업자등록번호(10자리)를 입력해주세요.\n예: 900101")
+    return STATE_SETUP_CARD_BIRTHDAY
+
+
+async def setup_card_birthday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["setup"]["_card"]["birthday"] = update.message.text.strip()
+    await update.message.reply_text("유효기간(YYMM)을 입력해주세요.\n예: 1230")
+    return STATE_SETUP_CARD_EXPIRE
+
+
+async def setup_card_expire(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["setup"]["_card"]["expire"] = update.message.text.strip()
+    await update.message.reply_text("카드 별칭을 입력해주세요. (예: '신한', 없으면 'skip')")
     return STATE_CARD_LABEL
 
 
 async def setup_card_label(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip()
-    label: str | None
-    if text.lower() == "skip" or text == "":
-        label = None
-    else:
-        label = text[:32]
+    label: str | None = None if text.lower() == "skip" or text == "" else text[:32]
 
     setup_data = context.user_data.get("setup", {})
-    pending = setup_data.pop("_pending_card", None)
+    pending = setup_data.pop("_card", None)
     if pending is None:
         await update.message.reply_text("등록 상태 손상. /setup 다시 해주세요.")
         context.user_data.pop("setup", None)
         return ConversationHandler.END
 
-    setup_data["cards"] = []  # 자격증명 먼저 저장, 카드는 add_card로
+    setup_data["cards"] = []
     storage.save(update.effective_user.id, setup_data)
     storage.add_card(update.effective_user.id, pending, label)
 
@@ -604,11 +620,29 @@ async def _handle_pay_card(cq, tid: int, card_id: str) -> None:
 
 def _cards_keyboard(cards: list[dict]) -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(f"🗑 {_card_display(c)}",
-                              callback_data=f"cards:del:{c['id']}")]
+        [
+            InlineKeyboardButton(f"편집 {_card_display(c)}", callback_data=f"cards:edit:{c['id']}"),
+            InlineKeyboardButton(f"🗑 {_card_display(c)}", callback_data=f"cards:del:{c['id']}"),
+        ]
         for c in cards
     ]
     rows.append([InlineKeyboardButton("➕ 카드 추가", callback_data="cards:add")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _card_edit_keyboard(card_id: str) -> InlineKeyboardMarkup:
+    fields = [
+        ("카드번호", "number"),
+        ("비밀번호", "password"),
+        ("생년월일/사업자번호", "birthday"),
+        ("유효기간", "expire"),
+        ("별칭", "label"),
+    ]
+    rows = [
+        [InlineKeyboardButton(label, callback_data=f"cards:edit_field:{card_id}:{field}")]
+        for label, field in fields
+    ]
+    rows.append([InlineKeyboardButton("← 돌아가기", callback_data="cards:noop")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -681,6 +715,18 @@ async def on_cards_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
+    if cq.data.startswith("cards:edit:"):
+        card_id = cq.data.removeprefix("cards:edit:")
+        card = storage.get_card(tid, card_id)
+        if card is None:
+            await _redraw_cards_list(cq, tid)
+            return
+        await cq.edit_message_text(
+            f"어떤 정보를 편집할까요?\n  {_card_display(card)}",
+            reply_markup=_card_edit_keyboard(card_id),
+        )
+        return
+
     if cq.data == "cards:noop":
         await _redraw_cards_list(cq, tid)
         return
@@ -721,35 +767,40 @@ async def cards_add_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     context.user_data["cards_new"] = {}
 
     await cq.edit_message_text(
-        "추가할 카드 정보를 한 줄에 공백 4개로:\n"
-        "  카드번호 비번앞2자리 생년월일(YYMMDD) 유효기간(YYMM) 혹은 사업자등록번호\n"
-        "예: 1111222233334444 12 900101 1230\n"
+        "추가할 카드번호를 입력해주세요.\n"
+        "예: 1111222233334444\n"
         "(취소: /cancel)"
     )
-    return STATE_CARDS_NEW_FIELDS
+    return STATE_CARDS_NUMBER
 
 
-async def cards_add_fields(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    parts = update.message.text.strip().split()
-    if len(parts) != 4:
-        await update.message.reply_text("형식이 잘못됐어요. 4개 항목을 공백으로.")
-        return STATE_CARDS_NEW_FIELDS
-    number, password, birthday, expire = parts
-    context.user_data["cards_new"] = {
-        "number": number, "password": password,
-        "birthday": birthday, "expire": expire,
-    }
-    await update.message.reply_text("카드 별칭? (예: '신한', 없으면 'skip')")
+async def cards_add_number(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["cards_new"]["number"] = update.message.text.strip().replace(" ", "")
+    await update.message.reply_text("카드 비밀번호 앞 2자리를 입력해주세요.\n예: 12")
+    return STATE_CARDS_PW
+
+
+async def cards_add_pw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["cards_new"]["password"] = update.message.text.strip()
+    await update.message.reply_text("생년월일(6자리) 또는 사업자등록번호(10자리)를 입력해주세요.\n예: 900101")
+    return STATE_CARDS_BIRTHDAY
+
+
+async def cards_add_birthday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["cards_new"]["birthday"] = update.message.text.strip()
+    await update.message.reply_text("유효기간(YYMM)을 입력해주세요.\n예: 1230")
+    return STATE_CARDS_EXPIRE
+
+
+async def cards_add_expire(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["cards_new"]["expire"] = update.message.text.strip()
+    await update.message.reply_text("카드 별칭을 입력해주세요. (예: '신한', 없으면 'skip')")
     return STATE_CARDS_NEW_LABEL
 
 
 async def cards_add_label(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip()
-    label: str | None
-    if text.lower() == "skip" or text == "":
-        label = None
-    else:
-        label = text[:32]
+    label: str | None = None if text.lower() == "skip" or text == "" else text[:32]
 
     fields = context.user_data.pop("cards_new", None)
     if not fields:
@@ -768,4 +819,73 @@ async def cards_add_label(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def cards_add_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.pop("cards_new", None)
     await update.message.reply_text("카드 추가 취소됨.")
+    return ConversationHandler.END
+
+
+async def cards_edit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """cards:edit_field:<id>:<field> 콜백 진입점."""
+    cq = update.callback_query
+    await cq.answer()
+
+    data = cq.data.removeprefix("cards:edit_field:")
+    card_id, field = data.split(":", 1)
+    context.user_data["cards_edit"] = {"card_id": card_id, "field": field}
+
+    field_prompts = {
+        "number": "새 카드번호를 입력해주세요.\n예: 1111222233334444",
+        "password": "새 카드 비밀번호 앞 2자리를 입력해주세요.\n예: 12",
+        "birthday": "새 생년월일(6자리) 또는 사업자등록번호(10자리)를 입력해주세요.\n예: 900101",
+        "expire": "새 유효기간(YYMM)을 입력해주세요.\n예: 1230",
+        "label": "새 카드 별칭을 입력해주세요. (없으면 'skip')",
+    }
+    await cq.edit_message_text(
+        field_prompts.get(field, f"새 {field} 값을 입력해주세요.") + "\n(취소: /cancel)"
+    )
+    return STATE_CARDS_EDIT_VALUE
+
+
+async def cards_edit_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    tid = update.effective_user.id
+    edit_info = context.user_data.pop("cards_edit", None)
+    if not edit_info:
+        await update.message.reply_text("편집 상태 손상. /cards 다시 해주세요.")
+        return ConversationHandler.END
+
+    card_id = edit_info["card_id"]
+    field = edit_info["field"]
+    value = update.message.text.strip()
+
+    if field == "label" and (value.lower() == "skip" or value == ""):
+        value = None
+    elif field == "number":
+        value = value.replace(" ", "")
+
+    data = storage.load(tid)
+    if data is None:
+        await update.message.reply_text("저장된 정보가 없습니다.")
+        return ConversationHandler.END
+
+    updated = False
+    for card in data.get("cards", []):
+        if card["id"] == card_id:
+            card[field] = value
+            updated = True
+            break
+
+    if not updated:
+        await update.message.reply_text("카드를 찾을 수 없습니다.")
+        return ConversationHandler.END
+
+    storage.save(tid, data)
+    cards = storage.list_cards(tid)
+    await update.message.reply_text(
+        "수정 완료.\n" + _cards_list_text(cards),
+        reply_markup=_cards_keyboard(cards),
+    )
+    return ConversationHandler.END
+
+
+async def cards_edit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.pop("cards_edit", None)
+    await update.message.reply_text("편집 취소됨.")
     return ConversationHandler.END
