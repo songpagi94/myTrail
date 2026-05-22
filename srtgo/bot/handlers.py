@@ -152,7 +152,7 @@ async def setup_card_number(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def setup_card_pw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["setup"]["_card"]["password"] = update.message.text.strip()
-    await update.message.reply_text("생년월일(6자리) 또는 사업자등록번호(10자리)를 입력해주세요.\n예: 900101")
+    await update.message.reply_text("생년월일(6자리) 또는 사업자등록번호(10자리)를 입력해주세요.")
     return STATE_SETUP_CARD_BIRTHDAY
 
 
@@ -642,7 +642,7 @@ def _card_edit_keyboard(card_id: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(label, callback_data=f"cards:edit_field:{card_id}:{field}")]
         for label, field in fields
     ]
-    rows.append([InlineKeyboardButton("← 돌아가기", callback_data="cards:noop")])
+    rows.append([InlineKeyboardButton("완료", callback_data=f"cards:edit_done:{card_id}")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -727,6 +727,10 @@ async def on_cards_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
+    if cq.data.startswith("cards:edit_done:"):
+        await _redraw_cards_list(cq, tid)
+        return
+
     if cq.data == "cards:noop":
         await _redraw_cards_list(cq, tid)
         return
@@ -782,7 +786,7 @@ async def cards_add_number(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def cards_add_pw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["cards_new"]["password"] = update.message.text.strip()
-    await update.message.reply_text("생년월일(6자리) 또는 사업자등록번호(10자리)를 입력해주세요.\n예: 900101")
+    await update.message.reply_text("생년월일(6자리) 또는 사업자등록번호(10자리)를 입력해주세요.")
     return STATE_CARDS_BIRTHDAY
 
 
@@ -829,18 +833,22 @@ async def cards_edit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     data = cq.data.removeprefix("cards:edit_field:")
     card_id, field = data.split(":", 1)
-    context.user_data["cards_edit"] = {"card_id": card_id, "field": field}
-
     field_prompts = {
         "number": "새 카드번호를 입력해주세요.\n예: 1111222233334444",
         "password": "새 카드 비밀번호 앞 2자리를 입력해주세요.\n예: 12",
-        "birthday": "새 생년월일(6자리) 또는 사업자등록번호(10자리)를 입력해주세요.\n예: 900101",
+        "birthday": "새 생년월일(6자리) 또는 사업자등록번호(10자리)를 입력해주세요.",
         "expire": "새 유효기간(YYMM)을 입력해주세요.\n예: 1230",
         "label": "새 카드 별칭을 입력해주세요. (없으면 'skip')",
     }
-    await cq.edit_message_text(
+    msg = await cq.edit_message_text(
         field_prompts.get(field, f"새 {field} 값을 입력해주세요.") + "\n(취소: /cancel)"
     )
+    context.user_data["cards_edit"] = {
+        "card_id": card_id,
+        "field": field,
+        "chat_id": msg.chat_id,
+        "message_id": msg.message_id,
+    }
     return STATE_CARDS_EDIT_VALUE
 
 
@@ -877,10 +885,13 @@ async def cards_edit_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return ConversationHandler.END
 
     storage.save(tid, data)
-    cards = storage.list_cards(tid)
-    await update.message.reply_text(
-        "수정 완료.\n" + _cards_list_text(cards),
-        reply_markup=_cards_keyboard(cards),
+    card = storage.get_card(tid, card_id)
+    card_name = _card_display(card) if card else card_id
+    await context.bot.edit_message_text(
+        chat_id=edit_info["chat_id"],
+        message_id=edit_info["message_id"],
+        text=f"수정 완료. 계속 편집하려면 항목을 선택하세요.\n  {card_name}",
+        reply_markup=_card_edit_keyboard(card_id),
     )
     return ConversationHandler.END
 

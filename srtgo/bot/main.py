@@ -140,7 +140,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(handlers.on_payment_decision, pattern=r"^pay:"))
     app.add_handler(CallbackQueryHandler(
         handlers.on_cards_callback,
-        pattern=r"^cards:(del|del_confirm|edit)(?=:)|^cards:noop$",
+        pattern=r"^cards:(del|del_confirm|edit|edit_done)(?=:)|^cards:noop$",
     ))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.on_free_message))
 
