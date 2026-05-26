@@ -14,7 +14,7 @@ _SEAT_ALIAS: dict[str, str] = {
     "일반": "GENERAL_ONLY",
     "특실만": "SPECIAL_ONLY",
     "특실우선": "SPECIAL_FIRST",
-    "특실": "SPECIAL_FIRST",
+    "특실": "SPECIAL_ONLY",
 }
 
 # KTX 역명 별칭 (코레일 API는 한국어 역명을 직접 수신)
