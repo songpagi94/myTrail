@@ -158,7 +158,7 @@ async def setup_card_pw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 async def setup_card_birthday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["setup"]["_card"]["birthday"] = update.message.text.strip()
-    await update.message.reply_text("유효기간(YYMM)을 입력해주세요.\n예: 1230")
+    await update.message.reply_text("유효기간(YYMM)을 입력해주세요.\n예: 3106")
     return STATE_SETUP_CARD_EXPIRE
 
 
@@ -627,6 +627,7 @@ def _cards_keyboard(cards: list[dict]) -> InlineKeyboardMarkup:
         for c in cards
     ]
     rows.append([InlineKeyboardButton("➕ 카드 추가", callback_data="cards:add")])
+    rows.append([InlineKeyboardButton("완료", callback_data="cards:done")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -731,6 +732,10 @@ async def on_cards_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await _redraw_cards_list(cq, tid)
         return
 
+    if cq.data == "cards:done":
+        await cq.edit_message_text("완료.")
+        return
+
     if cq.data == "cards:noop":
         await _redraw_cards_list(cq, tid)
         return
@@ -792,7 +797,7 @@ async def cards_add_pw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 async def cards_add_birthday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["cards_new"]["birthday"] = update.message.text.strip()
-    await update.message.reply_text("유효기간(YYMM)을 입력해주세요.\n예: 1230")
+    await update.message.reply_text("유효기간(YYMM)을 입력해주세요.\n예: 3106")
     return STATE_CARDS_EXPIRE
 
 
@@ -837,7 +842,7 @@ async def cards_edit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "number": "새 카드번호를 입력해주세요.\n예: 1111222233334444",
         "password": "새 카드 비밀번호 앞 2자리를 입력해주세요.\n예: 12",
         "birthday": "새 생년월일(6자리) 또는 사업자등록번호(10자리)를 입력해주세요.",
-        "expire": "새 유효기간(YYMM)을 입력해주세요.\n예: 1230",
+        "expire": "새 유효기간(YYMM)을 입력해주세요.\n예: 3106",
         "label": "새 카드 별칭을 입력해주세요. (없으면 'skip')",
     }
     msg = await cq.edit_message_text(
