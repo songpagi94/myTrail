@@ -17,6 +17,16 @@ _SEAT_ALIAS: dict[str, str] = {
     "특실": "SPECIAL_ONLY",
 }
 
+_PASSENGER_ALIAS: dict[str, str] = {
+    "어린이": "child",
+    "경로": "senior",
+    "중증장애인": "disability1to3",
+    "중증": "disability1to3",
+    "경증장애인": "disability4to6",
+    "경증": "disability4to6",
+    "유아": "toddler",
+}
+
 # KTX 역명 별칭 (코레일 API는 한국어 역명을 직접 수신)
 _KTX_ALIAS: dict[str, str] = {}
 
@@ -66,14 +76,15 @@ def _parse_rail(tok: str) -> str | None:
 def parse(text: str, today: str | None = None, **_kwargs) -> dict:
     """고정 형식 텍스트 → intent dict.
 
-    형식: 출발역 도착역 날짜(YYYYMMDD) 시간(HHMM) [SRT|KTX] [좌석옵션]
+    형식: 출발역 도착역 날짜(YYYYMMDD) 시간(HHMM) [SRT|KTX] [좌석옵션] [승객유형]
     예:  서울 부산 20260515 1400
          서울 부산 20260515 1400 KTX 특실우선
+         서울 부산 20260515 1400 KTX 어린이
     """
     tokens = text.strip().split()
     if len(tokens) < 4:
         raise ParseError(
-            "입력 형식: 출발역 도착역 날짜(YYYYMMDD) 시간(HHMM) [SRT|KTX] [좌석옵션]\n"
+            "입력 형식: 출발역 도착역 날짜(YYYYMMDD) 시간(HHMM) [SRT|KTX] [좌석옵션] [승객유형]\n"
             "예: 서울 부산 20260515 1400"
         )
 
@@ -84,19 +95,29 @@ def parse(text: str, today: str | None = None, **_kwargs) -> dict:
 
     rail = "SRT"
     seat_pref = "GENERAL_ONLY"
+    passenger_type = None
     for tok in tokens[4:]:
         r = _parse_rail(tok)
         if r:
             rail = r
         elif tok in _SEAT_ALIAS:
             seat_pref = _SEAT_ALIAS[tok]
+        elif tok in _PASSENGER_ALIAS:
+            passenger_type = _PASSENGER_ALIAS[tok]
         else:
             raise ParseError(
-                f"'{tok}' 미인식 — 사용 가능: SRT, KTX, 일반만, 일반우선, 특실만, 특실우선"
+                f"'{tok}' 미인식 — 사용 가능: SRT, KTX, "
+                "일반만, 일반우선, 특실만, 특실우선, "
+                "어린이, 유아, 경로, 중증장애인, 경증장애인"
             )
 
     dep = _normalize_station(dep_raw, rail)
     arr = _normalize_station(arr_raw, rail)
+
+    passengers = {"adult": 1, "child": 0, "senior": 0, "disability1to3": 0, "disability4to6": 0, "toddler": 0}
+    if passenger_type:
+        passengers["adult"] = 0
+        passengers[passenger_type] = 1
 
     return {
         "rail": rail,
@@ -104,7 +125,7 @@ def parse(text: str, today: str | None = None, **_kwargs) -> dict:
         "arr": arr,
         "date": date,
         "time": time_val,
-        "passengers": {"adult": 1, "child": 0, "senior": 0},
+        "passengers": passengers,
         "seat_pref": seat_pref,
         "needs_clarification": [],
     }

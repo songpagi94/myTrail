@@ -17,12 +17,14 @@ HELP_TEXT = (
     "/cancel — 진행 중 예약 시도·예약 취소\n"
     "/help — 도움말\n\n"
     "예약 검색 형식:\n"
-    "  출발역 도착역 날짜(YYYYMMDD) 시간(HHMM) [SRT|KTX] [좌석옵션]\n\n"
-    "좌석 옵션: 일반만(기본), 일반우선, 특실만, 특실우선\n\n"
+    "  출발역 도착역 날짜(YYYYMMDD) 시간(HHMM) [SRT|KTX] [좌석옵션] [승객유형]\n\n"
+    "좌석 옵션: 일반만(기본), 일반우선, 특실만, 특실우선\n"
+    "승객 유형: 어린이, 유아, 경로, 중증장애인, 경증장애인 (없으면 성인 기본)\n\n"
     "예:\n"
     "  서울 부산 20260515 1400\n"
     "  서울 부산 20260515 1400 KTX\n"
     "  서울 부산 20260515 1400 SRT 특실우선\n"
+    "  서울 부산 20260515 1400 KTX 어린이\n"
     "  울산 서울 20260515 0800  ← 역명 별칭 지원"
 )
 
@@ -184,17 +186,7 @@ async def setup_card_label(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     storage.add_card(update.effective_user.id, pending, label)
 
     context.user_data.pop("setup", None)
-    await update.message.reply_text(
-        "등록 완료.\n\n"
-        "예약 검색 형식:\n"
-        "  출발역 도착역 날짜(YYYYMMDD) 시간(HHMM) [SRT|KTX] [좌석옵션]\n\n"
-        "좌석 옵션: 일반만(기본), 일반우선, 특실만, 특실우선\n\n"
-        "예:\n"
-        "  서울 부산 20260515 1400\n"
-        "  서울 부산 20260515 1400 KTX\n"
-        "  서울 부산 20260515 1400 SRT 특실우선\n"
-        "  울산 서울 20260515 0800  ← 역명 별칭 지원"
-    )
+    await update.message.reply_text("등록 완료.\n\n" + HELP_TEXT)
     return ConversationHandler.END
 
 
@@ -310,11 +302,7 @@ async def on_free_message(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         intent = parser.parse(text=text, today=today)
     except parser.ParseError as e:
-        await update.message.reply_text(
-            f"형식 오류: {e}\n\n"
-            "입력 형식: 출발역 도착역 날짜(YYYYMMDD) 시간(HHMM) [SRT|KTX] [좌석옵션]\n"
-            "예: 서울 부산 20260515 1400"
-        )
+        await update.message.reply_text(f"형식 오류: {e}\n\n" + HELP_TEXT)
         return
 
     rail_type = intent["rail"]
@@ -351,6 +339,7 @@ async def on_free_message(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     context.user_data["search"] = {
         "rail": rail, "rail_type": rail_type,
         "trains": trains, "search_params": search_params,
+        "passengers": _passengers_to_list(rail_type, intent["passengers"]),
         "seat_option": _seat_option_from_intent(rail_type, intent["seat_pref"]),
         "page": 0,
     }
@@ -364,15 +353,24 @@ def _passengers_to_list(rail_type: str, p: dict) -> list:
     """intent의 passengers dict → rail이 받는 Passenger 리스트."""
     out = []
     if rail_type == "SRT":
-        from ..rail.srt.models import Adult, Child, Senior
-        if p["adult"]: out.append(Adult(p["adult"]))
-        if p["child"]: out.append(Child(p["child"]))
-        if p["senior"]: out.append(Senior(p["senior"]))
+        from ..rail.srt.models import Adult, Child, Senior, Disability1To3, Disability4To6
+        if p.get("adult"): out.append(Adult(p["adult"]))
+        if p.get("child"): out.append(Child(p["child"]))
+        if p.get("senior"): out.append(Senior(p["senior"]))
+        if p.get("disability1to3"): out.append(Disability1To3(p["disability1to3"]))
+        if p.get("disability4to6"): out.append(Disability4To6(p["disability4to6"]))
+        if p.get("toddler"): out.append(Child(p["toddler"]))  # SRT는 유아 별도 없음 → 어린이로 처리
     else:
-        from ..rail.ktx.models import AdultPassenger, ChildPassenger, SeniorPassenger
-        if p["adult"]: out.append(AdultPassenger(p["adult"]))
-        if p["child"]: out.append(ChildPassenger(p["child"]))
-        if p["senior"]: out.append(SeniorPassenger(p["senior"]))
+        from ..rail.ktx.models import (
+            AdultPassenger, ChildPassenger, SeniorPassenger,
+            Disability1To3Passenger, Disability4To6Passenger, ToddlerPassenger,
+        )
+        if p.get("adult"): out.append(AdultPassenger(p["adult"]))
+        if p.get("child"): out.append(ChildPassenger(p["child"]))
+        if p.get("senior"): out.append(SeniorPassenger(p["senior"]))
+        if p.get("disability1to3"): out.append(Disability1To3Passenger(p["disability1to3"]))
+        if p.get("disability4to6"): out.append(Disability4To6Passenger(p["disability4to6"]))
+        if p.get("toddler"): out.append(ToddlerPassenger(p["toddler"]))
     return out
 
 
@@ -509,6 +507,7 @@ async def on_preset_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             svc_resv.poll_and_reserve,
             search["rail"], search["search_params"], indices,
             search["seat_option"], on_success, on_error, cancel_event,
+            search.get("passengers"),
         )
 
     task = asyncio.create_task(runner())

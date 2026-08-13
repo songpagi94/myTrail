@@ -63,6 +63,7 @@ def poll_and_reserve(
     on_success,
     on_error,
     cancel_event: threading.Event | None = None,
+    passengers: list | None = None,
 ) -> None:
     """폴링 루프.
 
@@ -92,7 +93,7 @@ def poll_and_reserve(
             for idx in train_indices:
                 if idx < len(trains) and is_seat_available(trains[idx], seat_option):
                     logger.info("좌석 확보: %s (시도 #%d)", trains[idx], i_try)
-                    reservation = rail.reserve(trains[idx], option=seat_option)
+                    reservation = rail.reserve(trains[idx], passengers=passengers, option=seat_option)
                     on_success(reservation)
                     return
             _sleep(cancel_event)

@@ -178,7 +178,7 @@ def handle_reserve(rail: AbstractRail, rail_type: str) -> None:
 
     _original_poll = poll_and_reserve
 
-    def wrapped_poll(rail_ref, sp, indices, opt, success_cb, error_cb):
+    def wrapped_poll(rail_ref, sp, indices, opt, success_cb, error_cb, pax):
         # 폴링 상태 표시를 위해 search_train 호출 전에 출력
         nonlocal i_try
         orig_search = rail_ref.search_train
@@ -197,11 +197,11 @@ def handle_reserve(rail: AbstractRail, rail_type: str) -> None:
 
         rail_ref.search_train = search_with_display
         try:
-            _original_poll(rail_ref, sp, indices, opt, success_cb, error_cb)
+            _original_poll(rail_ref, sp, indices, opt, success_cb, error_cb, passengers=pax)
         finally:
             rail_ref.search_train = orig_search
 
-    wrapped_poll(rail, search_params, selected_indices, seat_option, on_success, on_error)
+    wrapped_poll(rail, search_params, selected_indices, seat_option, on_success, on_error, passengers)
 
 
 def _handle_session_error(ex, rail, rail_type):
